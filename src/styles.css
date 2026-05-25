@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@source "./**/*.{html,ts}";
+
+@theme {
+  /* ─ Type ──────────────────────────────────────────────── */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans:    "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+
+  /* ─ Brand (clinical navy + cyan accent — hospital theme) ─ */
+  --color-primary-50:   #ECF6FF;
+  --color-primary-100:  #D6ECFF;
+  --color-primary-200:  #A8D6FF;
+  --color-primary-300:  #6BBAFA;
+  --color-primary-400:  #2E91E6;
+  --color-primary-500:  #1A6FB8;        /* hover */
+  --color-primary-600:  #0E4F8C;        /* brand */
+  --color-brand:        #0E4F8C;        /* alias for `bg-brand` / `text-brand` / `border-brand` */
+  --color-primary-700:  #0A3A6B;
+  --color-primary-800:  #0C2A52;        /* deep navy ink */
+  --color-primary-900:  #061A36;
+
+  /* Cyan accent — for charts, highlights, "live" pulses */
+  --color-accent-50:    #E0F8FF;
+  --color-accent-100:   #B3EEFF;
+  --color-accent-300:   #5EDAFF;
+  --color-accent-500:   #00C3FF;        /* the user's requested electric blue */
+  --color-accent-600:   #009ED1;
+  --color-accent-700:   #007BA3;
+
+  /* ─ Surfaces (cooler greys to match the navy brand) ────── */
+  --color-surface-page:    #F4F7FB;
+  --color-surface-card:    #FFFFFF;
+  --color-surface-subtle:  #EDF1F7;
+  --color-surface-muted:   #F8FAFD;
+  --color-surface-inverse: #0C2A52;
+
+  /* ─ Ink (text) ───────────────────────────────────────── */
+  --color-ink:         #0F1B2D;
+  --color-ink-soft:    #2A374A;
+  --color-ink-muted:   #65758C;
+  --color-ink-faint:   #99A6B8;
+  --color-ink-inverse: #F4F7FB;
+
+  /* ─ Borders ──────────────────────────────────────────── */
+  --color-border:        #DCE3EE;
+  --color-border-strong: #BFCAD9;
+
+  /* ─ Status (cooler tones to match brand) ─────────────── */
+  --color-good-bg:     #DCF5E5;
+  --color-good-fg:     #117A3A;
+  --color-good-strong: #0A5226;
+  --color-info-bg:     #D6ECFF;
+  --color-info-fg:     #0E4F8C;
+  --color-info-strong: #0A3A6B;
+  --color-warn-bg:     #FBE9C7;
+  --color-warn-fg:     #8B5A0F;
+  --color-warn-strong: #5F3D08;
+  --color-danger-bg:   #F9D9D6;
+  --color-danger-fg:   #A4302B;
+  --color-danger-strong: #6E1F1B;
+
+  /* ─ Shadows ──────────────────────────────────────────── */
+  --shadow-card:   0 1px 0 rgba(20,30,25,0.04), 0 1px 2px rgba(20,30,25,0.05);
+  --shadow-raised: 0 2px 4px rgba(20,30,25,0.04), 0 8px 24px rgba(20,30,25,0.06);
+  --shadow-pop:    0 8px 32px rgba(20,30,25,0.10), 0 2px 6px rgba(20,30,25,0.06);
+
+  /* ─ Radii ────────────────────────────────────────────── */
+  --radius-md:  6px;
+  --radius-lg:  10px;
+  --radius-xl2: 10px;          /* card radius — matches prototype */
+
+  /* ─ Type scale ───────────────────────────────────────── */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    font-size: 13px;             /* prototype base */
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    background: var(--color-surface-page);
+  }
+  *:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--color-primary-100);
+    border-radius: 4px;
+  }
+}
