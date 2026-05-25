@@ -79,14 +79,26 @@ export class StaffService {
   }
 
   async update(id: string, patch: StaffUpdate): Promise<StaffMember> {
-    const { data, error } = await this.supabase.client
+    const { data, error } = await (this.supabase.client as any)
       .from('staff')
       .update(patch)
       .eq('id', id)
-      .select('*')
+      .select('*, branch:primary_branch_id(id, code, name)')
       .single();
     if (error) throw toError(error);
-    return data;
+    return data as StaffMember;
+  }
+
+  /** Ensure the `(staff_id, branch_id)` link exists in `staff_branches`.
+   *  Source of truth for "primary branch" is `staff.primary_branch_id`
+   *  (one column); this link table powers the M:N "which branches can this
+   *  staff access" check used by branch-scoped RLS. Idempotent. */
+  async setPrimaryBranch(staffId: string, branchId: string): Promise<void> {
+    if (!staffId || !branchId) throw new Error('staffId and branchId are required');
+    const { error } = await (this.supabase.client as any)
+      .from('staff_branches')
+      .upsert({ staff_id: staffId, branch_id: branchId }, { onConflict: 'staff_id,branch_id' });
+    if (error) throw toError(error);
   }
 
   async setActive(id: string, active: boolean): Promise<void> {

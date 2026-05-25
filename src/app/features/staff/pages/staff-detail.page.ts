@@ -12,6 +12,7 @@ import { format, parseISO } from 'date-fns';
 
 import { AlertComponent } from '../../../shared/ui/alert/alert.component';
 import { AuthStore } from '../../../core/auth/auth.store';
+import { BranchStore } from '../../../core/branches/branch.store';
 import { StaffService } from '../data/staff.service';
 import type { StaffMember } from '../data/staff.types';
 import { SignaturePadComponent } from '../../consent/components/signature-pad.component';
@@ -224,8 +225,23 @@ function hashIndex(s: string, len: number): number {
 
           <!-- Branch / Head Office -->
           <div class="px-5 py-3.5 flex items-start gap-4">
-            <span class="w-36 shrink-0 text-[12px] text-ink-muted pt-0.5">Branch / HO</span>
-            @if (m.branch; as b) {
+            <span class="w-36 shrink-0 text-[12px] text-ink-muted pt-0.5">Branch / HO <span class="text-danger-fg">*</span></span>
+            @if (editing()) {
+              <div class="flex-1 min-w-0">
+                <select [formControl]="form.controls.branch_id"
+                        class="w-full h-8 px-2.5 text-[13px] bg-surface-card border rounded-md text-ink focus:outline-none focus:border-primary-600"
+                        [class.border-danger-fg]="form.controls.branch_id.touched && form.controls.branch_id.invalid"
+                        [class.border-border]="!(form.controls.branch_id.touched && form.controls.branch_id.invalid)">
+                  <option value="" disabled>Select a branch…</option>
+                  @for (b of editBranches(); track b.id) {
+                    <option [value]="b.id">{{ b.name }} · {{ b.code }}</option>
+                  }
+                </select>
+                @if (form.controls.branch_id.touched && form.controls.branch_id.invalid) {
+                  <p class="mt-1 text-[11px] text-danger-fg">Branch / HO is required.</p>
+                }
+              </div>
+            } @else if (m.branch; as b) {
               <span class="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-full bg-primary-50 text-primary-700 text-[11px] font-medium">
                 {{ b.name }} <span class="opacity-70 font-mono ml-0.5">· {{ b.code }}</span>
               </span>
@@ -379,9 +395,18 @@ export class StaffDetailPage implements OnInit {
   protected readonly canWrite = computed(() => this.auth.has('staff.write'));
   protected readonly currentStaffId = computed(() => this.auth.staffId());
 
+  protected readonly branchStore = inject(BranchStore);
+  /** Branches the editor can choose from. Sourced from BranchStore which is
+   *  loaded by the app shell — falls back to a fetch in startEdit() if empty. */
+  protected readonly editBranches = this.branchStore.branches;
+
   protected readonly form = new FormGroup({
     full_name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(2)] }),
-    phone: new FormControl<string | null>(null),
+    phone:     new FormControl<string | null>(null),
+    /** Required: every staff member must belong to a branch / HO. Editing it
+     *  rewrites both `staff.primary_branch_id` and the `staff_branches` link
+     *  so the rest of the app sees the change immediately. */
+    branch_id: new FormControl('', { nonNullable: true, validators: [Validators.required] }),
   });
 
   async ngOnInit() {
@@ -398,9 +423,16 @@ export class StaffDetailPage implements OnInit {
   }
 
   protected startEdit(m: StaffMember) {
-    this.form.setValue({ full_name: m.full_name, phone: m.phone ?? null });
+    this.form.setValue({
+      full_name: m.full_name,
+      phone:     m.phone ?? null,
+      branch_id: m.branch?.id ?? (m as any).primary_branch_id ?? '',
+    });
     this.saveError.set(null);
     this.editing.set(true);
+    // Lazy-load the branches list if the app shell hasn't populated it yet
+    // (e.g. deep-link straight to /staff/:id without visiting the dashboard).
+    if (this.branchStore.branches().length === 0) void this.branchStore.load();
   }
 
   protected cancelEdit() {
@@ -413,12 +445,19 @@ export class StaffDetailPage implements OnInit {
     this.saving.set(true);
     this.saveError.set(null);
     try {
+      const newBranchId = this.form.value.branch_id!;
+      const branchChanged = newBranchId !== (m.branch?.id ?? (m as any).primary_branch_id ?? '');
       const updated = await this.svc.update(m.id, {
-        full_name: this.form.value.full_name!,
-        phone: this.form.value.phone || null,
+        full_name:         this.form.value.full_name!,
+        phone:             this.form.value.phone || null,
+        primary_branch_id: newBranchId,
       });
+      // When branch changes we also have to rewrite the staff_branches link
+      // table so RLS / branch-scoped queries see the new home immediately.
+      if (branchChanged) await this.svc.setPrimaryBranch(m.id, newBranchId);
       this.member.set(updated);
       this.editing.set(false);
+      this.toast.success('Profile saved', branchChanged ? 'Branch updated' : 'Changes saved');
     } catch (e) {
       this.saveError.set(e instanceof Error ? e.message : 'Failed to save changes');
     } finally {
