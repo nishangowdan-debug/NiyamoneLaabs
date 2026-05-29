@@ -12,7 +12,8 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { BranchContextService } from '../../../core/branches/branch-context.service';
 import { debounceTime, distinctUntilChanged } from 'rxjs';
 
 import { AlertComponent } from '../../../shared/ui/alert/alert.component';
@@ -92,11 +93,11 @@ function hashIndex(input: string, len: number): number {
           </button>
         }
         @if (canWrite()) {
-          <a routerLink="register"
+          <button type="button" (click)="goToRegister()"
              class="h-8 px-3 inline-flex items-center gap-1.5 rounded-md bg-primary-600 hover:bg-primary-500 text-white text-[12px] font-medium shadow-card">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Register patient
-          </a>
+          </button>
         }
       </div>
     </header>
@@ -279,6 +280,17 @@ export class PatientsListPage implements OnInit, OnDestroy {
   private exportSvc = inject(ExportService);
   private destroyRef = inject(DestroyRef);
   private toast = inject(ToastService);
+  private router = inject(Router);
+  private branchGuard = inject(BranchContextService);
+
+  /** "Register patient" button entry — force a target branch before
+   *  navigating, so the registration form is filed against the right
+   *  branch from the start. */
+  protected async goToRegister(): Promise<void> {
+    const branchId = await this.branchGuard.require('Register patient');
+    if (!branchId) return;
+    void this.router.navigate(['/patients/register']);
+  }
 
   protected readonly exporting = signal(false);
   protected readonly importing = signal(false);

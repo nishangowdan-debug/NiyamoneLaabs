@@ -7,11 +7,12 @@ import { CommandPaletteComponent } from '../../shared/ui/command-palette/command
 import { AmbulanceAlertBanner } from '../../features/ambulance-alert/ambulance-alert-banner';
 import { AmbulanceAlertService } from '../../features/ambulance-alert/ambulance-alert.service';
 import { SessionTimeoutService } from '../../core/auth/session-timeout.service';
+import { BranchPickerDialogComponent } from '../../core/branches/branch-picker.dialog';
 
 @Component({
   selector: 'app-app-layout',
   standalone: true,
-  imports: [RouterOutlet, Topbar, Sidebar, ToastOutletComponent, CommandPaletteComponent, AmbulanceAlertBanner],
+  imports: [RouterOutlet, Topbar, Sidebar, ToastOutletComponent, CommandPaletteComponent, AmbulanceAlertBanner, BranchPickerDialogComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="min-h-dvh bg-surface-page">
@@ -26,6 +27,7 @@ import { SessionTimeoutService } from '../../core/auth/session-timeout.service';
     </div>
     <app-toast-outlet />
     <app-command-palette />
+    <app-branch-picker-dialog />
   `,
 })
 export class AppLayout implements OnDestroy {

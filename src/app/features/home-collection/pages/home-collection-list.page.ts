@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { BranchContextService } from '../../../core/branches/branch-context.service';
 import { AlertComponent } from '../../../shared/ui/alert/alert.component';
 import { BranchStore } from '../../../core/branches/branch.store';
 import { AuthStore } from '../../../core/auth/auth.store';
@@ -26,10 +27,10 @@ import {
         <h1 class="font-display text-[28px] font-medium tracking-[-0.02em] text-ink leading-[1.1]">Home collection requests</h1>
         <p class="text-[13px] text-ink-muted mt-1">{{ rows().length }} request{{ rows().length === 1 ? '' : 's' }} · filter by status</p>
       </div>
-      <a routerLink="/home-collection/new"
+      <button type="button" (click)="goToCreate()"
          class="h-9 px-3 inline-flex items-center gap-1.5 rounded-md bg-primary-600 hover:bg-primary-500 text-white text-[12px] font-medium shadow-card">
         + New request
-      </a>
+      </button>
     </header>
 
     <div class="flex items-center gap-2 mb-4 flex-wrap">
@@ -161,6 +162,14 @@ import {
 export class HomeCollectionListPage implements OnInit {
   private svc = inject(HomeCollectionService);
   private branchStore = inject(BranchStore);
+  private router = inject(Router);
+  private branchGuard = inject(BranchContextService);
+
+  protected async goToCreate(): Promise<void> {
+    const branchId = await this.branchGuard.require('New home-collection request');
+    if (!branchId) return;
+    void this.router.navigate(['/home-collection/new']);
+  }
   private auth = inject(AuthStore);
   private toast = inject(ToastService);
 

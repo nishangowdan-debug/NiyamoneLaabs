@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AlertComponent } from '../../../shared/ui/alert/alert.component';
 import { BranchStore } from '../../../core/branches/branch.store';
+import { BranchContextService } from '../../../core/branches/branch-context.service';
 import { ToastService } from '../../../shared/ui/toast/toast.service';
 import { HomeCollectionService } from '../data/home-collection.service';
 import type { Phlebotomist } from '../data/home-collection.types';
@@ -120,6 +121,7 @@ import type { Phlebotomist } from '../data/home-collection.types';
 export class PhlebotomistsPage implements OnInit {
   private svc = inject(HomeCollectionService);
   private branchStore = inject(BranchStore);
+  private branchGuard = inject(BranchContextService);
   private toast = inject(ToastService);
 
   protected readonly rows = signal<Phlebotomist[]>([]);
@@ -175,7 +177,9 @@ export class PhlebotomistsPage implements OnInit {
     return `inline-flex items-center h-[20px] px-2 rounded-full text-[10px] font-medium ${tone}`;
   }
 
-  protected openNew() {
+  protected async openNew() {
+    const branchId = await this.branchGuard.require('New phlebotomist');
+    if (!branchId) return;
     this.editId.set(null);
     this.form = this.emptyForm();
     this.modal.set('new');

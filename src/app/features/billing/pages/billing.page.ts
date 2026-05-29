@@ -18,6 +18,7 @@ import { format, formatDistanceToNow, parseISO } from 'date-fns';
 import { AlertComponent } from '../../../shared/ui/alert/alert.component';
 import { AuthStore } from '../../../core/auth/auth.store';
 import { BranchStore } from '../../../core/branches/branch.store';
+import { BranchContextService } from '../../../core/branches/branch-context.service';
 import { ToastService } from '../../../shared/ui/toast/toast.service';
 import { BillingService } from '../data/billing.service';
 import { BillingStore } from '../data/billing.store';
@@ -1018,6 +1019,7 @@ export class BillingPage implements OnInit, OnDestroy {
   private printSvc = inject(InvoicePrintService);
   private auth = inject(AuthStore);
   protected readonly branchStore = inject(BranchStore);
+  private readonly branchGuard = inject(BranchContextService);
   private router = inject(Router);
   private toast = inject(ToastService);
   private destroyRef = inject(DestroyRef);
@@ -1509,7 +1511,14 @@ export class BillingPage implements OnInit, OnDestroy {
   }
 
   // ── New-invoice flow ──────────────────────────────
-  protected openNew() {
+  protected async openNew() {
+    // Force a target branch BEFORE the form opens. Without this guard a
+    // super admin in "All hospitals" mode could file the invoice against
+    // the patient's home branch or (worse) the oldest active branch via
+    // the create_invoice RPC's silent fallback — leading to branch-wise
+    // revenue mismatch and cancel-and-reissue churn.
+    const branchId = await this.branchGuard.require('New invoice');
+    if (!branchId) return;
     this.draftLines.set([this.makeBlankLine()]);
     this.selectedPatient.set(null);
     this.patientHits.set([]);
@@ -1649,8 +1658,14 @@ export class BillingPage implements OnInit, OnDestroy {
       // & handling" sits below the cart.
       const items = this.withPickupLast([...this.draftLines()]);
 
+      // The branch guard at openNew() guarantees activeBranchId is set
+      // by the time we reach confirm. Re-read it here so a topbar change
+      // mid-flight still pins the invoice to whatever the cashier last
+      // confirmed; fall back to null only if something truly broke.
+      const targetBranchId = this.branchStore.activeBranchId();
       const inv = await this.svc.createInvoice({
         patientId: patient.id,
+        branchId: targetBranchId,
         doctorStaffId: this.newDoctorManual ? null : this.newDoctorId,
         doctorName: this.newDoctorManual ? manualName : null,
         items,

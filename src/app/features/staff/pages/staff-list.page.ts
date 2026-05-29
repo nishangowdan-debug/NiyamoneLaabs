@@ -19,6 +19,7 @@ import { format, parseISO } from 'date-fns';
 import { AlertComponent } from '../../../shared/ui/alert/alert.component';
 import { AuthStore } from '../../../core/auth/auth.store';
 import { BranchStore } from '../../../core/branches/branch.store';
+import { BranchContextService } from '../../../core/branches/branch-context.service';
 import { StaffStore } from '../data/staff.store';
 import { StaffService } from '../data/staff.service';
 import type { StaffMember } from '../data/staff.types';
@@ -456,6 +457,7 @@ export class StaffListPage implements OnInit, OnDestroy {
   protected readonly svc = inject(StaffService);
   private auth = inject(AuthStore);
   protected readonly branchStore = inject(BranchStore);
+  private   readonly branchGuard = inject(BranchContextService);
   private exportSvc = inject(ExportService);
   private destroyRef = inject(DestroyRef);
 
@@ -585,11 +587,13 @@ export class StaffListPage implements OnInit, OnDestroy {
   }
 
   // ── Invite panel ─────────────────────────────────────────────
-  protected openInvitePanel() {
-    // Pre-select the active branch (if any) so the field is filled when the
-    // admin is already scoped to a single branch; still re-validates on submit.
-    const presetBranch = this.branchStore.activeBranchId() ?? '';
-    this.inviteForm.reset({ full_name: '', email: '', branch_id: presetBranch, role_slug: '', phone: null, joined_at: null });
+  protected async openInvitePanel() {
+    // Branch context guard: force a target branch before the form opens so
+    // a super admin in "All hospitals" mode can't accidentally land a new
+    // staff record under the wrong branch and leak via RBAC scope later.
+    const branchId = await this.branchGuard.require('Invite staff');
+    if (!branchId) return;
+    this.inviteForm.reset({ full_name: '', email: '', branch_id: branchId, role_slug: '', phone: null, joined_at: null });
     this.inviteError.set(null);
     this.inviteSuccess.set(false);
     this.generatedPassword.set(null);

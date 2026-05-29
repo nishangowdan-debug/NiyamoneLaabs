@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { AlertComponent } from '../../../shared/ui/alert/alert.component';
 import { AuthStore } from '../../../core/auth/auth.store';
 import { BranchStore } from '../../../core/branches/branch.store';
+import { BranchContextService } from '../../../core/branches/branch-context.service';
 import { ToastService } from '../../../shared/ui/toast/toast.service';
 import { LabCatalogService } from '../data/lab-catalog.service';
 import type { LabTestForm, LabTestWithPrice } from '../data/lab-catalog.types';
@@ -328,6 +329,7 @@ export class LabCatalogPage implements OnInit {
   private svc = inject(LabCatalogService);
   private auth = inject(AuthStore);
   protected readonly branchStore = inject(BranchStore);
+  private   readonly branchGuard = inject(BranchContextService);
   private toast = inject(ToastService);
 
   protected readonly tests = signal<LabTestWithPrice[]>([]);
@@ -389,7 +391,12 @@ export class LabCatalogPage implements OnInit {
     return `inline-flex items-center h-[20px] px-2 rounded-full text-[10px] font-medium ${tone}`;
   }
 
-  protected openNew() {
+  protected async openNew() {
+    // Branch context guard — per-branch price rows are written on save, so
+    // a new test created without a scoped branch silently misses the price
+    // row and shows as "unpriced" everywhere downstream.
+    const branchId = await this.branchGuard.require('New lab test');
+    if (!branchId) return;
     this.form = this.emptyForm();
     this.cloneFromId.set('');
     this.modal.set('new');

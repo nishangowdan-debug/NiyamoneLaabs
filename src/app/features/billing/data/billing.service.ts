@@ -109,6 +109,11 @@ export class BillingService {
 
   async createInvoice(input: {
     patientId: string;
+    /** Target branch the invoice should file under. Set by the cashier via
+     *  the topbar branch selector (enforced by BranchContextService.require
+     *  before openNew). Optional in the type for backwards compatibility,
+     *  but the RPC will reject null in production paths. */
+    branchId?: string | null;
     doctorStaffId?: string | null;     // optional — referring doctor only, printed on invoice
     doctorName?: string | null;        // manual entry when doctor isn't in the staff table
     items: DraftLine[];
@@ -136,14 +141,15 @@ export class BillingService {
       ? [`Referring doctor: ${manualName}`, input.notes].filter(Boolean).join(' · ')
       : input.notes;
 
-    const { data, error } = await this.supabase.client.rpc('create_invoice', {
-      p_patient_id: input.patientId,
-      p_items: lines as unknown as Json,
+    const { data, error } = await (this.supabase.client as any).rpc('create_invoice', {
+      p_patient_id:   input.patientId,
+      p_branch_id:    input.branchId ?? null,
+      p_items:        lines as unknown as Json,
       p_encounter_id: input.encounterId ?? undefined,
       p_admission_id: input.admissionId ?? undefined,
-      p_due_days: input.dueDays ?? 7,
-      p_notes: notesWithDoctor ?? undefined,
-      p_issue: input.issue ?? true,
+      p_due_days:     input.dueDays ?? 7,
+      p_notes:        notesWithDoctor ?? undefined,
+      p_issue:        input.issue ?? true,
     });
     if (error) throw error;
     const invoice = data as Invoice;

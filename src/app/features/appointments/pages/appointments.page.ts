@@ -33,6 +33,7 @@ import { AppointmentsService } from '../data/appointments.service';
 import { AppointmentsStore } from '../data/appointments.store';
 import { AuthStore } from '../../../core/auth/auth.store';
 import { BranchStore } from '../../../core/branches/branch.store';
+import { BranchContextService } from '../../../core/branches/branch-context.service';
 import { ageFromDob } from '../../patients/utils/age-from-dob';
 import type { AppointmentRow, DoctorBlockRow, DoctorInfo } from '../data/appointments.types';
 import type { AppointmentStatus } from '../../../core/supabase/supabase.types';
@@ -716,6 +717,7 @@ export class AppointmentsPage implements OnInit, OnDestroy {
   private readonly svc    = inject(AppointmentsService);
   private readonly auth   = inject(AuthStore);
   protected readonly branchStore = inject(BranchStore);
+  private   readonly branchGuard = inject(BranchContextService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly exportSvc = inject(ExportService);
@@ -1014,7 +1016,9 @@ export class AppointmentsPage implements OnInit, OnDestroy {
   }
 
   // ── New appointment modal ─────────────────────────────────────────
-  protected openModal(prefill?: { doctorId?: string; time?: string }) {
+  protected async openModal(prefill?: { doctorId?: string; time?: string }) {
+    const branchId = await this.branchGuard.require('New appointment');
+    if (!branchId) return;
     this.fmDate.set(format(this.store.selectedDate(), 'yyyy-MM-dd'));
     this.fmTime.set(prefill?.time ?? '09:00');
     this.fmDoctor.set(prefill?.doctorId ?? this.store.doctors()[0]?.id ?? '');

@@ -22,6 +22,7 @@ import { AuthStore } from '../../../core/auth/auth.store';
 import { IpdService } from '../data/ipd.service';
 import { IpdStore } from '../data/ipd.store';
 import { BranchStore } from '../../../core/branches/branch.store';
+import { BranchContextService } from '../../../core/branches/branch-context.service';
 import { PharmacyPrintService } from '../../pharmacy/services/pharmacy-print.service';
 import { ToastService } from '../../../shared/ui/toast/toast.service';
 import { ConsentCaptureComponent } from '../../consent/components/consent-capture.component';
@@ -609,6 +610,7 @@ export class IpdBedsPage implements OnInit, OnDestroy {
   private svc = inject(IpdService);
   private auth = inject(AuthStore);
   protected readonly branchStore = inject(BranchStore);
+  private   readonly branchGuard = inject(BranchContextService);
   private toast = inject(ToastService);
   private printSvc = inject(PharmacyPrintService);
   private destroyRef = inject(DestroyRef);
@@ -995,7 +997,9 @@ export class IpdBedsPage implements OnInit, OnDestroy {
       .format((cents ?? 0) / 100);
   }
 
-  protected openNewWard(): void {
+  protected async openNewWard(): Promise<void> {
+    const branchId = await this.branchGuard.require('New ward');
+    if (!branchId) return;
     this.wardEditId.set(null);
     this.wf_code = ''; this.wf_name = ''; this.wf_type = 'general';
     this.wf_floor = ''; this.wf_rate = 0; this.wf_active = true;
@@ -1056,7 +1060,9 @@ export class IpdBedsPage implements OnInit, OnDestroy {
     return map[t] ?? t;
   }
 
-  protected openNewBed(w: WardView): void {
+  protected async openNewBed(w: WardView): Promise<void> {
+    const branchId = await this.branchGuard.require('New bed');
+    if (!branchId) return;
     this.bedEditId.set(null);
     this.bf_code = ''; this.bf_type = 'standard'; this.bf_status = 'available';
     this.bf_rate = null; this.bf_notes = '';
