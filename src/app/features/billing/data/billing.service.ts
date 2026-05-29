@@ -18,7 +18,7 @@ export class BillingService {
     // top instead of getting buried by alphabetical/id tiebreakers.
     const { data, error } = await this.supabase.client
       .from('invoices')
-      .select(`*, patient:patient_id(id, uhid, full_name, first_name, last_name, mobile), doctor:doctor_staff_id(id, full_name, metadata)`)
+      .select(`*, patient:patient_id(id, uhid, full_name, first_name, last_name, mobile), doctor:doctor_staff_id(id, full_name, metadata), branch:branch_id(id, code, name)`)
       .order('invoice_date', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -31,7 +31,7 @@ export class BillingService {
     const [hdrResp, itemsResp, paysResp] = await Promise.all([
       this.supabase.client
         .from('invoices')
-        .select(`*, patient:patient_id(id, uhid, full_name, first_name, last_name, mobile), doctor:doctor_staff_id(id, full_name, metadata)`)
+        .select(`*, patient:patient_id(id, uhid, full_name, first_name, last_name, mobile), doctor:doctor_staff_id(id, full_name, metadata), branch:branch_id(id, code, name)`)
         .eq('id', id)
         .single(),
       this.supabase.client

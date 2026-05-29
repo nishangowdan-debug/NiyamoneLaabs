@@ -178,6 +178,7 @@ interface PatientHit { id: string; uhid: string; full_name: string; mobile: stri
           <tr class="bg-surface-muted">
             <th class="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-muted font-semibold border-b border-border whitespace-nowrap">Invoice #</th>
             <th class="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-muted font-semibold border-b border-border">Patient</th>
+            <th class="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-muted font-semibold border-b border-border whitespace-nowrap">Branch</th>
             <th class="text-left px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-muted font-semibold border-b border-border whitespace-nowrap">Date</th>
             <th class="text-right px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-muted font-semibold border-b border-border whitespace-nowrap">Total</th>
             <th class="text-right px-4 py-2.5 text-[11px] uppercase tracking-[0.06em] text-ink-muted font-semibold border-b border-border whitespace-nowrap">Paid</th>
@@ -188,7 +189,7 @@ interface PatientHit { id: string; uhid: string; full_name: string; mobile: stri
         </thead>
         <tbody>
           @if (store.loading() && store.invoices().length === 0) {
-            <tr><td colspan="8" class="px-4 py-12 text-center text-[13px] text-ink-muted">Loading invoices…</td></tr>
+            <tr><td colspan="9" class="px-4 py-12 text-center text-[13px] text-ink-muted">Loading invoices…</td></tr>
           } @else {
             @for (inv of store.visible(); track inv.id) {
               <tr class="border-b border-border last:border-b-0 hover:bg-surface-muted transition-colors">
@@ -197,6 +198,16 @@ interface PatientHit { id: string; uhid: string; full_name: string; mobile: stri
                   @if (inv.patient; as p) {
                     <p class="text-[13px] font-medium text-ink truncate">{{ p.full_name || (p.first_name + ' ' + p.last_name) }}</p>
                     <p class="text-[11px] font-mono text-ink-muted truncate">{{ p.uhid }} · {{ p.mobile }}</p>
+                  }
+                </td>
+                <td class="px-4 py-2.5 whitespace-nowrap">
+                  @if (inv.branch; as b) {
+                    <span class="inline-flex items-center gap-1.5 h-[22px] px-2 rounded-full bg-primary-50 text-primary-700 text-[10px] font-medium" [title]="b.name">
+                      <span class="font-mono">{{ b.code }}</span>
+                      <span class="text-primary-800/70 truncate max-w-[140px]">· {{ shortBranchName(b.name) }}</span>
+                    </span>
+                  } @else {
+                    <span class="text-[11px] text-ink-muted">—</span>
                   }
                 </td>
                 <td class="px-4 py-2.5 font-mono text-[12px] text-ink-soft whitespace-nowrap">
@@ -233,7 +244,7 @@ interface PatientHit { id: string; uhid: string; full_name: string; mobile: stri
               </tr>
             } @empty {
               <tr>
-                <td colspan="8" class="px-4 py-16 text-center">
+                <td colspan="9" class="px-4 py-16 text-center">
                   <p class="text-[13px] text-ink-soft">No invoices match your filters.</p>
                   @if (canWrite()) {
                     <button type="button" (click)="openNew()" class="inline-block mt-3 text-[13px] text-primary-600 hover:underline font-medium">
@@ -1508,6 +1519,15 @@ export class BillingPage implements OnInit, OnDestroy {
 
   protected formatINR(cents: number): string {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(cents / 100);
+  }
+
+  /** Strip the brand prefix from a branch name so the inline pill stays
+   *  short — "Sree Diagnostics — Bengaluru" → "Bengaluru". Falls back to
+   *  the full name when no separator is present. */
+  protected shortBranchName(name: string | null | undefined): string {
+    if (!name) return '';
+    const sep = name.split(/—|–|-/);
+    return (sep.length > 1 ? sep[sep.length - 1] : name).trim();
   }
 
   // ── New-invoice flow ──────────────────────────────

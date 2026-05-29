@@ -24,6 +24,14 @@ export interface InvoiceRow extends Invoice {
     full_name: string;
     metadata?: Record<string, unknown> | null;
   } | null;
+  /** Branch the invoice was filed under. Joined via invoices.branch_id and
+   *  surfaced as a column on the billing list so a super admin viewing
+   *  "All hospitals" can see at-a-glance which branch each bill belongs to. */
+  branch?: {
+    id: string;
+    code: string;
+    name: string;
+  } | null;
 }
 
 export interface InvoiceDetail extends InvoiceRow {
