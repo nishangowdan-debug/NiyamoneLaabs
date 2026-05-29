@@ -396,8 +396,10 @@ interface PatientHit { id: string; uhid: string; full_name: string; mobile: stri
                         <input type="text" [ngModel]="line.description" (ngModelChange)="onDraftDescription(line.id, $event)" [name]="'desc-' + idx" readonly
                                class="col-span-12 md:col-span-4 h-9 px-2.5 text-[12px] bg-cyan-50/60 border border-cyan-200 rounded-md text-cyan-900 cursor-default" />
                       } @else {
-                        <!-- Service select -->
-                        <select [(ngModel)]="line.service_code" (ngModelChange)="onServicePicked(line, $event)"
+                        <!-- Service select — one-way bind so the [(ngModel)] banana doesn't
+                             mutate the signal's line element in place. The change is
+                             routed through onServicePicked which patches via the signal. -->
+                        <select [ngModel]="line.service_code" (ngModelChange)="onServicePicked(line, $event)"
                                 [name]="'svc-' + idx"
                                 class="col-span-12 md:col-span-4 h-9 px-2.5 pr-7 text-[12px] bg-surface-card border border-border rounded-md text-ink appearance-none bg-no-repeat focus:outline-none focus:border-primary-600 focus:ring-[3px] focus:ring-primary-100"
                                 [style.background-image]="chevronUrl" style="background-position: right 8px center;">
@@ -445,11 +447,11 @@ interface PatientHit { id: string; uhid: string; full_name: string; mobile: stri
                         <div class="inline-flex items-center gap-1 text-[10px]">
                           <span class="text-ink-muted">Routing</span>
                           <div class="inline-flex border border-border rounded-md overflow-hidden">
-                            <button type="button" (click)="line.routing = 'inhouse'"
+                            <button type="button" (click)="patchDraftLine(line.id, { routing: 'inhouse' })"
                                     [class]="(line.routing ?? 'inhouse') === 'inhouse' ? 'px-2 h-6 bg-primary-600 text-white' : 'px-2 h-6 bg-surface-card text-ink-soft hover:bg-surface-subtle'">
                               Inhouse
                             </button>
-                            <button type="button" (click)="line.routing = 'outsource'"
+                            <button type="button" (click)="patchDraftLine(line.id, { routing: 'outsource' })"
                                     [class]="line.routing === 'outsource' ? 'px-2 h-6 bg-violet-600 text-white' : 'px-2 h-6 bg-surface-card text-ink-soft hover:bg-surface-subtle'">
                               Outsource
                             </button>
@@ -882,7 +884,7 @@ interface PatientHit { id: string; uhid: string; full_name: string; mobile: stri
                         </div>
                       } @else {
                         <!-- Manual/custom line: free-form service picker (catalog link) -->
-                        <select [(ngModel)]="line.service_code" (ngModelChange)="onEditServicePicked(line, $event)"
+                        <select [ngModel]="line.service_code" (ngModelChange)="onEditServicePicked(line, $event)"
                                 [name]="'esvc-' + idx"
                                 [title]="line.service_code ? 'Catalog link — used by lab routing &amp; commission. Editing the description on the right doesn\\'t change this.' : 'No catalog link — this prints fine but won\\'t auto-route to the lab. Pick a service to link.'"
                                 class="col-span-12 md:col-span-4 h-9 px-2.5 pr-7 text-[12px] bg-surface-card border border-border rounded-md text-ink appearance-none bg-no-repeat focus:outline-none focus:border-primary-600 focus:ring-[3px] focus:ring-primary-100"
@@ -1553,21 +1555,35 @@ export class BillingPage implements OnInit, OnDestroy {
   }
 
   protected onServicePicked(line: DraftLine, code: string) {
-    if (!code) return;
+    if (!code) {
+      // Custom row chosen — clear the code, keep the rest of the line.
+      this.patchDraftLine(line.id, { service_code: '' });
+      return;
+    }
     const svc = this.store.services().find((s) => s.code === code);
-    if (!svc) return;
-    line.service_code = code;
-    if (!line.description || line.description === '') line.description = svc.name;
-    if (!line.unit_price_cents)                       line.unit_price_cents = svc.unit_price_cents;
-    if (line.gst_rate === 0)                          line.gst_rate = +svc.gst_rate;
-    if (svc.category === 'lab' && !line.routing) {
-      // Prefill from catalog default; user can flip the Inhouse/Outsource toggle.
+    if (!svc) {
+      // Still write the code so the dropdown shows the user's choice.
+      this.patchDraftLine(line.id, { service_code: code });
+      return;
+    }
+    // Build the patch from the CURRENT signal-held line, not the (potentially
+    // stale) `line` reference Angular passed in. Otherwise concurrent edits
+    // on other lines could be clobbered when this patch lands.
+    const cur = this.draftLines().find((l) => l.id === line.id) ?? line;
+    const patch: Partial<DraftLine> = { service_code: code };
+    if (!cur.description || cur.description === '') patch.description = svc.name;
+    if (!cur.unit_price_cents)                       patch.unit_price_cents = svc.unit_price_cents;
+    if (cur.gst_rate === 0)                          patch.gst_rate = +svc.gst_rate;
+    this.patchDraftLine(line.id, patch);
+
+    if (svc.category === 'lab') {
+      // Prefill routing from catalog default; user can flip the toggle.
       void this.svc.getDefaultRoutings([code]).then((m) => {
         const def = m.get(code) ?? 'inhouse';
-        this.draftLines.update((arr) => arr.map((l) => l.id === line.id ? { ...l, routing: l.routing ?? def } : l));
+        const fresh = this.draftLines().find((l) => l.id === line.id);
+        if (fresh && !fresh.routing) this.patchDraftLine(line.id, { routing: def });
       });
     }
-    this.draftLines.update((arr) => arr.map((l) => l.id === line.id ? { ...line } : l));
   }
 
   /** A draft line counts as a lab line when its picked service is in the lab catalog. */
@@ -2172,13 +2188,21 @@ export class BillingPage implements OnInit, OnDestroy {
   }
 
   protected onEditServicePicked(line: DraftLine, code: string) {
-    if (!code) return;
+    if (!code) {
+      this.patchEditLine(line.id, { service_code: '' });
+      return;
+    }
     const svc = this.store.services().find((s) => s.code === code);
-    if (!svc) return;
-    if (!line.description) line.description = svc.name;
-    if (!line.unit_price_cents) line.unit_price_cents = svc.unit_price_cents;
-    if (line.gst_rate === 0) line.gst_rate = +svc.gst_rate;
-    this.editLines.update((arr) => arr.map((l) => l.id === line.id ? { ...line } : l));
+    if (!svc) {
+      this.patchEditLine(line.id, { service_code: code });
+      return;
+    }
+    const cur = this.editLines().find((l) => l.id === line.id) ?? line;
+    const patch: Partial<DraftLine> = { service_code: code };
+    if (!cur.description)         patch.description      = svc.name;
+    if (!cur.unit_price_cents)    patch.unit_price_cents = svc.unit_price_cents;
+    if (cur.gst_rate === 0)       patch.gst_rate         = +svc.gst_rate;
+    this.patchEditLine(line.id, patch);
   }
 
   protected canSubmitEdit(): boolean {
