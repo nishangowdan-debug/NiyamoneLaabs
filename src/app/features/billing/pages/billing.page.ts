@@ -484,11 +484,12 @@ interface PatientHit { id: string; uhid: string; full_name: string; mobile: stri
             <!-- Total summary -->
             <div class="px-3 py-2.5 border-t border-border bg-surface-muted text-right">
               <p class="text-[11px] text-ink-muted">
-                Taxable {{ formatINR(draftSummary().taxable) }}
-                · GST {{ formatINR(draftSummary().gst) }}
+                Taxable {{ formatINR(draftTaxableCents()) }}
+                · GST {{ formatINR(draftGstCents()) }}
+                <span class="text-ink-faint ml-1">· {{ draftLines().length }} row{{ draftLines().length === 1 ? '' : 's' }}</span>
               </p>
               <p class="font-display text-[18px] font-medium text-ink mt-0.5">
-                Total {{ formatINR(draftSummary().total) }}
+                Total {{ formatINR(draftGrandTotalCents()) }}
               </p>
             </div>
           </div>
@@ -943,11 +944,12 @@ interface PatientHit { id: string; uhid: string; full_name: string; mobile: stri
 
             <div class="px-3 py-2.5 border-t border-border bg-surface-muted text-right">
               <p class="text-[11px] text-ink-muted">
-                Taxable {{ formatINR(editSummary().taxable) }}
-                · GST {{ formatINR(editSummary().gst) }}
+                Taxable {{ formatINR(editTaxableCents()) }}
+                · GST {{ formatINR(editGstCents()) }}
+                <span class="text-ink-faint ml-1">· {{ editLines().length }} row{{ editLines().length === 1 ? '' : 's' }}</span>
               </p>
               <p class="font-display text-[18px] font-medium text-ink mt-0.5">
-                Total {{ formatINR(editSummary().total) }}
+                Total {{ formatINR(editGrandTotalCents()) }}
               </p>
             </div>
           </div>
@@ -1317,27 +1319,53 @@ export class BillingPage implements OnInit, OnDestroy {
     tier: 'branch' | 'super';
   } | null>(null);
 
+  /** Per-line taxable cents (qty × price − discount, clamped to ≥ 0). */
+  private linTaxable(l: DraftLine): number {
+    return Math.max(0, Math.round(l.qty * l.unit_price_cents) - l.discount_cents);
+  }
+  /** Per-line GST cents at the line's gst_rate. */
+  private linGst(l: DraftLine): number {
+    return Math.round(this.linTaxable(l) * (l.gst_rate / 100));
+  }
+
   protected readonly editSummary = computed(() => {
     const lines = this.editLines();
-    const taxable = lines.reduce((s, l) =>
-      s + Math.max(0, Math.round(l.qty * l.unit_price_cents) - l.discount_cents), 0);
-    const gst = lines.reduce((s, l) => {
-      const t = Math.max(0, Math.round(l.qty * l.unit_price_cents) - l.discount_cents);
-      return s + Math.round(t * (l.gst_rate / 100));
-    }, 0);
+    const taxable = lines.reduce((s, l) => s + this.linTaxable(l), 0);
+    const gst     = lines.reduce((s, l) => s + this.linGst(l),     0);
     return { taxable, gst, total: taxable + gst };
   });
 
   protected readonly draftSummary = computed(() => {
     const lines = this.draftLines();
-    const taxable = lines.reduce((s, l) =>
-      s + Math.max(0, Math.round(l.qty * l.unit_price_cents) - l.discount_cents), 0);
-    const gst = lines.reduce((s, l) => {
-      const t = Math.max(0, Math.round(l.qty * l.unit_price_cents) - l.discount_cents);
-      return s + Math.round(t * (l.gst_rate / 100));
-    }, 0);
+    const taxable = lines.reduce((s, l) => s + this.linTaxable(l), 0);
+    const gst     = lines.reduce((s, l) => s + this.linGst(l),     0);
     return { taxable, gst, total: taxable + gst };
   });
+
+  /** Belt-and-braces grand total — computed inline (no memoization layer)
+   *  via the SAME `lineTotal(line)` function each row uses for its displayed
+   *  "Line total: ₹X". Used by the template instead of `draftSummary().total`
+   *  so the bottom total cannot drift from the sum of visible row totals.
+   *  If the bottom shows ₹250 while two rows each show ₹250, that's now a
+   *  signal-emission bug (rows rendering stale data) rather than a math one. */
+  protected draftGrandTotalCents(): number {
+    return this.draftLines().reduce((s, l) => s + this.lineTotal(l), 0);
+  }
+  protected draftTaxableCents(): number {
+    return this.draftLines().reduce((s, l) => s + this.linTaxable(l), 0);
+  }
+  protected draftGstCents(): number {
+    return this.draftLines().reduce((s, l) => s + this.linGst(l), 0);
+  }
+  protected editGrandTotalCents(): number {
+    return this.editLines().reduce((s, l) => s + this.lineTotal(l), 0);
+  }
+  protected editTaxableCents(): number {
+    return this.editLines().reduce((s, l) => s + this.linTaxable(l), 0);
+  }
+  protected editGstCents(): number {
+    return this.editLines().reduce((s, l) => s + this.linGst(l), 0);
+  }
 
   private unsubscribe: (() => void) | null = null;
   private backfilledOnce = false;
@@ -1366,18 +1394,31 @@ export class BillingPage implements OnInit, OnDestroy {
    *  that Angular effects can't observe. */
   private hcSyncInFlight = false;
   private readonly _hcLineSyncFx = effect(() => {
-    const lines = this.draftLines();  // tracked
+    // Track draftLines() so the effect re-runs after every mutation. Avoid
+    // forwarding the captured snapshot — syncPickupRow always reads fresh
+    // inside, eliminating a race where an async surcharge fetch's resume path
+    // wrote back a STALE [pickup-only] snapshot and clobbered lab lines.
+    void this.draftLines();
     if (!this.newOpen() || !this.hcEnabled) return;
-    void this.syncPickupRow(lines);
+    void this.syncPickupRow();
   });
 
-  /** Add/refresh the single pickup row (idempotent — safe to call repeatedly). */
-  private async syncPickupRow(lines = this.draftLines()): Promise<void> {
+  /** Add/refresh the single pickup row (idempotent — safe to call repeatedly).
+   *  Always reads the freshest `draftLines()` AFTER the async surcharge fetch
+   *  resolves so concurrent line edits during the await aren't lost. */
+  private async syncPickupRow(): Promise<void> {
     if (this.hcSyncInFlight) return;
     this.hcSyncInFlight = true;
     try {
-      const rupees = await this.computeHomeCollectionSurcharge(lines);
+      // Read lines BEFORE the await for the surcharge computation only —
+      // it's just looking up which codes are home-eligible, which doesn't
+      // depend on prices/qty/discounts that the user might be editing.
+      const snapshotForLookup = this.draftLines();
+      const rupees = await this.computeHomeCollectionSurcharge(snapshotForLookup);
       const cents = Math.round(rupees * 100);
+
+      // Re-read AFTER the await. This is the array we'll mutate against —
+      // it reflects every keystroke the user typed while we were fetching.
       const cur = this.draftLines();
       const existing = cur.find((l) => this.isHomePickupLine(l));
       if (existing) {
@@ -1504,9 +1545,7 @@ export class BillingPage implements OnInit, OnDestroy {
   }
 
   protected lineTotal(l: DraftLine): number {
-    const taxable = Math.max(0, Math.round(l.qty * l.unit_price_cents) - l.discount_cents);
-    const gst = Math.round(taxable * (l.gst_rate / 100));
-    return taxable + gst;
+    return this.linTaxable(l) + this.linGst(l);
   }
 
   protected formatDate(iso: string): string {
