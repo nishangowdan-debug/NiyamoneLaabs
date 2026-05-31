@@ -84,6 +84,23 @@ export interface MetaLeadConfig {
   active: boolean;
 }
 
+// ── WhatsApp message templates (stored in system_settings) ───────────
+export interface WaTemplate {
+  body: string;
+}
+export interface WaReviewRequest {
+  enabled: boolean;
+  auto_after_report: boolean;
+  url: string;
+  body: string;
+}
+export interface WaTemplates {
+  report: WaTemplate;
+  bill: WaTemplate;
+  registration: WaTemplate;
+  review_request: WaReviewRequest;
+}
+
 // ── Signatory (read from v_signatories) ──────────────────────────────
 export interface Signatory {
   id: string;

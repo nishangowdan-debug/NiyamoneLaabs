@@ -75,51 +75,110 @@ export class WhatsAppService {
     return { ok: !!win, url, phone };
   }
 
-  /** Compose the bill message body. Keep within ~600 chars so it fits one
-   *  WhatsApp bubble cleanly. */
-  composeBillMessage(input: {
+  // ── Editable templates (Settings → WhatsApp messages) ───────────────
+  // Loaded lazily and cached for 60s so every send doesn't hit the DB.
+  private _templatesCache: { data: any; at: number } | null = null;
+  private async loadTemplates(): Promise<any> {
+    const now = Date.now();
+    if (this._templatesCache && now - this._templatesCache.at < 60_000) {
+      return this._templatesCache.data;
+    }
+    const { data } = await (this.supabase.client as any)
+      .from('system_settings').select('value').eq('key', 'wa_templates_v1').maybeSingle();
+    const value = data?.value ?? null;
+    this._templatesCache = { data: value, at: now };
+    return value;
+  }
+  /** Public — let admin tabs invalidate the cache after saving. */
+  invalidateTemplatesCache(): void { this._templatesCache = null; }
+
+  /** Substitute {{key}} placeholders in a template body. */
+  private applyVars(body: string, vars: Record<string, string>): string {
+    return body.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => vars[k] ?? `[${k}]`);
+  }
+
+  /** Resolve the active company/branch name shown in templates. */
+  private companyName(): string {
+    return this.branches.activeBranchName() || 'Sree Diagnostics';
+  }
+
+  /** Compose the bill message body. Reads the admin-editable template
+   *  from system_settings; falls back to a clean default if absent. */
+  async composeBillMessage(input: {
     patientName: string;
     invoiceNo: string;
     amount: number;        // rupees
     link: string;
-  }): string {
-    const amt = `₹${Math.round(input.amount).toLocaleString('en-IN')}`;
-    return (
-`Hi ${input.patientName.split(' ')[0]},
+  }): Promise<string> {
+    const tpl = await this.loadTemplates();
+    const body: string = tpl?.bill?.body
+      ?? `Hi {{first_name}},
 
-Your bill from Sree Diagnostics is ready.
-Invoice: ${input.invoiceNo}
-Amount paid: ${amt}
+Your bill from {{company_name}} is ready.
+Invoice: {{invoice_no}}
+Amount: {{amount}}
 
 View / save your bill:
-${input.link}
+{{viewer_url}}
 
-Thanks for choosing Sree Diagnostics!`);
+Thanks for choosing {{company_name}}!`;
+    return this.applyVars(body, {
+      first_name:   input.patientName.split(' ')[0] || 'patient',
+      full_name:    input.patientName,
+      invoice_no:   input.invoiceNo,
+      amount:       `₹${Math.round(input.amount).toLocaleString('en-IN')}`,
+      viewer_url:   input.link,
+      company_name: this.companyName(),
+    });
   }
 
-  composeReportMessage(input: {
+  async composeReportMessage(input: {
     patientName: string;
     testList: string[];    // codes or names
     /** Direct .pdf URL — WhatsApp renders this as a document attachment card. */
     pdfUrl?: string;
     /** Fallback online viewer URL (the existing /public/lab-report page). */
     viewerUrl: string;
-  }): string {
-    const tests = input.testList.slice(0, 6).join(', ') +
-      (input.testList.length > 6 ? ` +${input.testList.length - 6} more` : '');
-    const pdfBlock = input.pdfUrl
-      ? `\n📄 Download PDF:\n${input.pdfUrl}\n`
-      : '';
-    return (
-`Hi ${input.patientName.split(' ')[0]},
+  }): Promise<string> {
+    const tpl = await this.loadTemplates();
+    const body: string = tpl?.report?.body
+      ?? `Hi {{first_name}},
 
 Your lab report is ready.
-Tests: ${tests}
-${pdfBlock}
-View online:
-${input.viewerUrl}
+Tests: {{test_list}}
 
-— Sree Diagnostics`);
+📄 Download PDF:
+{{pdf_url}}
+
+View online:
+{{viewer_url}}
+
+— {{company_name}}`;
+
+    const tests = input.testList.slice(0, 6).join(', ') +
+      (input.testList.length > 6 ? ` +${input.testList.length - 6} more` : '');
+
+    let composed = this.applyVars(body, {
+      first_name:   input.patientName.split(' ')[0] || 'patient',
+      full_name:    input.patientName,
+      test_list:    tests,
+      pdf_url:      input.pdfUrl ?? input.viewerUrl,   // fall back to viewer if PDF mint failed
+      viewer_url:   input.viewerUrl,
+      company_name: this.companyName(),
+    });
+
+    // Auto-append the Google review block when admin has enabled it.
+    const rr = tpl?.review_request;
+    if (rr?.enabled && rr?.auto_after_report && rr?.url && rr?.body) {
+      const reviewBlock = this.applyVars(rr.body, {
+        first_name:   input.patientName.split(' ')[0] || 'patient',
+        full_name:    input.patientName,
+        company_name: this.companyName(),
+        review_url:   rr.url,
+      });
+      composed = composed + reviewBlock;
+    }
+    return composed;
   }
 
   /** Render the public report in a hidden iframe in `?upload=1` mode and
@@ -212,7 +271,7 @@ ${input.viewerUrl}
     const origin = this.resolveBaseUrl(input.baseUrl);
     // ?download=1 makes the public page auto-trigger Save-as-PDF on mobile.
     const link = `${origin}/public/invoice/${token}?download=1`;
-    const message = this.composeBillMessage({
+    const message = await this.composeBillMessage({
       patientName: input.patient.full_name || 'patient',
       invoiceNo: input.invoiceNo,
       amount: input.amountRupees,
@@ -249,7 +308,7 @@ ${input.viewerUrl}
     // fails so the user is never blocked.
     const pdfUrl = await this.mintReportPdf(viewerUrl);
 
-    const message = this.composeReportMessage({
+    const message = await this.composeReportMessage({
       patientName: input.patient.full_name || 'patient',
       testList: input.testList,
       pdfUrl: pdfUrl ?? undefined,

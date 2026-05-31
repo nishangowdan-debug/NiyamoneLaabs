@@ -5,12 +5,13 @@ import { LetterheadTab } from './tabs/letterhead.tab';
 import { LetterTemplatesTab } from './tabs/letter-templates.tab';
 import { IntegrationsTab } from './tabs/integrations.tab';
 import { CategoriesTab } from './tabs/categories.tab';
+import { WhatsappTemplatesTab } from './tabs/whatsapp-templates.tab';
 import { GstRatesPage } from './gst-rates.page';
 import { HsnCodesPage } from './hsn-codes.page';
 import { PrintSettingsPage } from './print-settings.page';
 
 type TabKey = 'company' | 'letterhead' | 'print-branding' | 'letter-templates'
-            | 'integrations' | 'gst' | 'hsn' | 'categories' | 'users';
+            | 'whatsapp' | 'integrations' | 'gst' | 'hsn' | 'categories' | 'users';
 
 /**
  * Settings hub — single page with 8 horizontal tabs, matching the reference
@@ -25,7 +26,7 @@ type TabKey = 'company' | 'letterhead' | 'print-branding' | 'letter-templates'
   imports: [
     RouterLink,
     CompanyInfoTab, LetterheadTab, LetterTemplatesTab, IntegrationsTab,
-    CategoriesTab, GstRatesPage, HsnCodesPage, PrintSettingsPage,
+    CategoriesTab, WhatsappTemplatesTab, GstRatesPage, HsnCodesPage, PrintSettingsPage,
   ],
   template: `
     <header class="pb-3 mb-4 border-b border-border">
@@ -59,6 +60,7 @@ type TabKey = 'company' | 'letterhead' | 'print-branding' | 'letter-templates'
       @case ('letterhead')      { <app-letterhead-tab /> }
       @case ('print-branding')  { <app-print-settings-page /> }
       @case ('letter-templates'){ <app-letter-templates-tab /> }
+      @case ('whatsapp')        { <app-whatsapp-templates-tab /> }
       @case ('integrations')    { <app-integrations-tab /> }
       @case ('gst')             { <app-gst-rates-page /> }
       @case ('hsn')             { <app-hsn-codes-page /> }
@@ -96,6 +98,7 @@ export class SettingsPage implements OnInit {
     { key: 'letterhead',       label: 'Letterhead' },
     { key: 'print-branding',   label: 'Print branding' },
     { key: 'letter-templates', label: 'Letter templates' },
+    { key: 'whatsapp',         label: 'WhatsApp messages' },
     { key: 'integrations',     label: 'Integrations' },
     { key: 'gst',              label: 'GST rates' },
     { key: 'hsn',              label: 'HSN / SAC' },
