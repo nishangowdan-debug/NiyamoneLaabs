@@ -100,20 +100,69 @@ Thanks for choosing Sree Diagnostics!`);
   composeReportMessage(input: {
     patientName: string;
     testList: string[];    // codes or names
-    link: string;
+    /** Direct .pdf URL — WhatsApp renders this as a document attachment card. */
+    pdfUrl?: string;
+    /** Fallback online viewer URL (the existing /public/lab-report page). */
+    viewerUrl: string;
   }): string {
     const tests = input.testList.slice(0, 6).join(', ') +
       (input.testList.length > 6 ? ` +${input.testList.length - 6} more` : '');
+    const pdfBlock = input.pdfUrl
+      ? `\n📄 Download PDF:\n${input.pdfUrl}\n`
+      : '';
     return (
 `Hi ${input.patientName.split(' ')[0]},
 
 Your lab report is ready.
 Tests: ${tests}
-
-View securely:
-${input.link}
+${pdfBlock}
+View online:
+${input.viewerUrl}
 
 — Sree Diagnostics`);
+  }
+
+  /** Render the public report in a hidden iframe in `?upload=1` mode and
+   *  wait for the page to post the resulting public PDF URL back. Resolves
+   *  with `null` if generation fails or times out — caller should fall back
+   *  to the viewer-only link in that case so dispatch is never blocked. */
+  private async mintReportPdf(viewerUrl: string, timeoutMs = 25000): Promise<string | null> {
+    const url = viewerUrl + (viewerUrl.includes('?') ? '&' : '?') + 'upload=1';
+    return new Promise<string | null>((resolve) => {
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0;visibility:hidden;';
+      iframe.setAttribute('aria-hidden', 'true');
+      iframe.src = url;
+
+      let settled = false;
+      const cleanup = () => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('message', onMsg);
+        clearTimeout(timer);
+        try { iframe.remove(); } catch { /* gone */ }
+      };
+      const onMsg = (ev: MessageEvent) => {
+        const m = ev.data;
+        if (!m || typeof m !== 'object') return;
+        if (m.type === 'pdf-ready' && typeof m.url === 'string') {
+          cleanup();
+          resolve(m.url);
+        } else if (m.type === 'pdf-error') {
+          console.warn('[whatsapp] PDF mint failed:', m.reason);
+          cleanup();
+          resolve(null);
+        }
+      };
+      const timer = setTimeout(() => {
+        console.warn('[whatsapp] PDF mint timed out');
+        cleanup();
+        resolve(null);
+      }, timeoutMs);
+
+      window.addEventListener('message', onMsg);
+      document.body.appendChild(iframe);
+    });
   }
 
   /** Record a dispatch attempt. Failure is non-fatal — we don't block the
@@ -124,6 +173,7 @@ ${input.link}
     message_type: 'bill' | 'lab_report' | 'reminder' | 'custom';
     message_text: string;
     public_url: string | null;
+    pdf_url?: string | null;
     related_invoice_id?: string | null;
     related_lab_order_id?: string | null;
   }): Promise<void> {
@@ -135,6 +185,7 @@ ${input.link}
         message_type: input.message_type,
         message_text: input.message_text,
         public_url: input.public_url,
+        pdf_url: input.pdf_url ?? null,
         related_invoice_id: input.related_invoice_id ?? null,
         related_lab_order_id: input.related_lab_order_id ?? null,
         triggered_by: (this.auth.claims() as any)?.sub ?? null,
@@ -184,18 +235,25 @@ ${input.link}
     patient: { id: string; full_name: string | null; mobile: string | null };
     testList: string[];
     baseUrl?: string;
-  }): Promise<{ ok: boolean; url: string; reason?: string }> {
+  }): Promise<{ ok: boolean; url: string; pdfUrl?: string; reason?: string }> {
     if (!input.patient.mobile) return { ok: false, url: '', reason: 'No mobile on file' };
     const phone = this.toE164(input.patient.mobile);
     if (!phone) return { ok: false, url: '', reason: 'Mobile is not a valid 10-digit number' };
     const token = await this.ensureLabOrderToken(input.labOrderId);
     const origin = this.resolveBaseUrl(input.baseUrl);
-    // ?download=1 makes the public page auto-trigger Save-as-PDF on mobile.
-    const link = `${origin}/public/lab-report/${token}?download=1`;
+    const viewerUrl = `${origin}/public/lab-report/${token}`;
+
+    // Mint the PDF first so the WhatsApp message can carry a direct .pdf URL
+    // (WhatsApp renders these as document cards with one-tap download instead
+    // of a generic web preview). Falls back to viewer-only when generation
+    // fails so the user is never blocked.
+    const pdfUrl = await this.mintReportPdf(viewerUrl);
+
     const message = this.composeReportMessage({
       patientName: input.patient.full_name || 'patient',
       testList: input.testList,
-      link,
+      pdfUrl: pdfUrl ?? undefined,
+      viewerUrl,
     });
     const opened = this.openChat(phone, message);
     await this.logSend({
@@ -203,9 +261,15 @@ ${input.link}
       to_phone: phone,
       message_type: 'lab_report',
       message_text: message,
-      public_url: link,
+      public_url: viewerUrl,
+      pdf_url: pdfUrl,
       related_lab_order_id: input.labOrderId,
     });
-    return { ok: opened.ok, url: opened.url, reason: opened.ok ? undefined : 'Popup blocked — copy the link manually.' };
+    return {
+      ok: opened.ok,
+      url: opened.url,
+      pdfUrl: pdfUrl ?? undefined,
+      reason: opened.ok ? undefined : 'Popup blocked — copy the link manually.',
+    };
   }
 }

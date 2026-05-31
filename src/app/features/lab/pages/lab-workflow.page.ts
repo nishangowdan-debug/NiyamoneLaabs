@@ -508,13 +508,23 @@ export class LabWorkflowPage implements OnInit, OnDestroy {
       const tests = (o.results ?? [])
         .map((r: any) => r.test?.code)
         .filter(Boolean) as string[];
+      // Generating the PDF + uploading to storage takes a couple of seconds —
+      // tell the user something is happening instead of leaving them staring
+      // at a blank UI while the hidden iframe renders the report.
+      this.toast.info('Preparing PDF…', 'Generating report attachment for WhatsApp.');
       const r = await this.waSvc.sendLabReport({
         labOrderId: o.id,
         patient: { id: o.patient?.id, full_name: o.patient?.full_name, mobile: o.patient?.mobile },
         testList: tests,
       });
-      if (r.ok) this.toast.success('WhatsApp opened', 'Send the message from the new tab.');
-      else      this.toast.warn('Could not open WhatsApp', r.reason ?? '');
+      if (r.ok) {
+        const detail = r.pdfUrl
+          ? 'PDF attached. Press Send in the new tab.'
+          : 'Viewer link sent (PDF generation skipped). Press Send in the new tab.';
+        this.toast.success('WhatsApp opened', detail);
+      } else {
+        this.toast.warn('Could not open WhatsApp', r.reason ?? '');
+      }
     } catch (e: any) {
       this.toast.error('WhatsApp failed', e?.message ?? String(e));
     }

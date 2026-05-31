@@ -28,6 +28,27 @@ export class PdfDownloadService {
     filename: string,
     opts: { scale?: number; orientation?: 'portrait' | 'landscape'; marginMm?: number } = {},
   ): Promise<void> {
+    const pdf = await this.buildPdfFromNode(node, opts);
+    pdf.save(`${filename}.pdf`);
+  }
+
+  /** Same render pipeline as `downloadFromNode` but yields a `Blob` instead
+   *  of triggering a Save dialog. Use when the caller wants to upload the
+   *  PDF to storage (e.g. attach to a WhatsApp message) without ever showing
+   *  the patient a download prompt. */
+  async pdfBlobFromNode(
+    node: HTMLElement,
+    opts: { scale?: number; orientation?: 'portrait' | 'landscape'; marginMm?: number } = {},
+  ): Promise<Blob> {
+    const pdf = await this.buildPdfFromNode(node, opts);
+    return pdf.output('blob');
+  }
+
+  /** Core capture + paginate pipeline shared by the download and blob paths. */
+  private async buildPdfFromNode(
+    node: HTMLElement,
+    opts: { scale?: number; orientation?: 'portrait' | 'landscape'; marginMm?: number },
+  ): Promise<any> {
     const { default: html2canvas } = await import('html2canvas-pro');
     const { default: jsPDF } = await import('jspdf');
 
@@ -35,8 +56,6 @@ export class PdfDownloadService {
     const orientation = opts.orientation ?? 'portrait';
     const marginMm = opts.marginMm ?? 0;
 
-    // Capture the DOM as a bitmap. backgroundColor:#fff prevents the
-    // transparent body from rendering with whatever's behind the iframe.
     const canvas = await html2canvas(node, {
       scale,
       backgroundColor: '#ffffff',
@@ -52,7 +71,6 @@ export class PdfDownloadService {
     const usableWidthMm = pageWidthMm - marginMm * 2;
     const usableHeightMm = pageHeightMm - marginMm * 2;
 
-    // Convert canvas px → mm at the chosen scale.
     const pxPerMm = canvas.width / usableWidthMm;
     const pageHeightPx = usableHeightMm * pxPerMm;
 
@@ -92,7 +110,7 @@ export class PdfDownloadService {
       pageIdx += 1;
     }
 
-    pdf.save(`${filename}.pdf`);
+    return pdf;
   }
 
   /**

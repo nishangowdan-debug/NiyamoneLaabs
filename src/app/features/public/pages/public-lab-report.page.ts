@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnInit, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { SupabaseService } from '../../../core/supabase/supabase.service';
+import { PdfDownloadService } from '../../../shared/print/pdf-download.service';
 
 /** Token-secured lab-report view. Same RLS pattern as the invoice page. */
 @Component({
@@ -11,7 +12,7 @@ import { SupabaseService } from '../../../core/supabase/supabase.service';
   imports: [CommonModule, DatePipe],
   template: `
     <div class="min-h-screen bg-slate-50 py-6 px-4">
-      <div class="max-w-3xl mx-auto">
+      <div class="max-w-3xl mx-auto" #reportRoot>
         @if (loading()) {
           <p class="text-center text-slate-500 py-12">Loading…</p>
         } @else if (error()) {
@@ -100,6 +101,9 @@ import { SupabaseService } from '../../../core/supabase/supabase.service';
 export class PublicLabReportPage implements OnInit {
   private route    = inject(ActivatedRoute);
   private supabase = inject(SupabaseService);
+  private pdfSvc   = inject(PdfDownloadService);
+
+  @ViewChild('reportRoot', { static: false }) reportRoot?: ElementRef<HTMLElement>;
 
   protected readonly loading = signal(true);
   protected readonly error   = signal<string | null>(null);
@@ -139,10 +143,19 @@ export class PublicLabReportPage implements OnInit {
           document.title = `${safe(patient)}_${dateStr}_${safe(uhid)}`;
         } catch { /* non-fatal */ }
 
-        // ?download=1 → auto-trigger Save-as-PDF dialog. WhatsApp links carry
-        // this flag so patients see the save prompt the moment they tap.
+        // ?download=1 → auto-trigger Save-as-PDF dialog (legacy / patient flow).
         if (this.route.snapshot.queryParamMap.get('download') === '1') {
           setTimeout(() => { try { window.print(); } catch { /* user-blocked */ } }, 600);
+        }
+
+        // ?upload=1 → headless dispatcher mode used by the WhatsApp send flow.
+        // Generates the PDF in-browser via html2canvas-pro + jsPDF, uploads it
+        // to the public `lab-reports/{token}.pdf` bucket, then postMessages
+        // the resulting URL back to window.opener / window.parent so the
+        // dispatcher can swap it into the wa.me message body. Never prompts.
+        if (this.route.snapshot.queryParamMap.get('upload') === '1') {
+          // Wait one frame for Angular to render the table, then capture.
+          setTimeout(() => void this.uploadPdfAndNotify(token), 700);
         }
       }
     } catch (e: any) {
@@ -163,5 +176,45 @@ export class PublicLabReportPage implements OnInit {
 
   protected savePdf() {
     window.print();
+  }
+
+  /** Generate PDF from current DOM, push to Supabase Storage, broadcast URL. */
+  private async uploadPdfAndNotify(token: string): Promise<void> {
+    const post = (msg: any) => {
+      try { window.opener?.postMessage(msg, '*'); } catch { /* opener cross-origin */ }
+      try { window.parent?.postMessage(msg, '*'); } catch { /* parent cross-origin */ }
+    };
+    try {
+      const node = this.reportRoot?.nativeElement;
+      if (!node) { post({ type: 'pdf-error', reason: 'no-dom' }); return; }
+
+      const blob = await this.pdfSvc.pdfBlobFromNode(node, { scale: 2, marginMm: 0 });
+      const path = `${token}.pdf`;
+      // upsert:true so re-sending the same order replaces the PDF instead of erroring.
+      const { error: upErr } = await (this.supabase.client as any).storage
+        .from('lab-reports')
+        .upload(path, blob, { upsert: true, contentType: 'application/pdf', cacheControl: '60' });
+      if (upErr) throw upErr;
+
+      const { data: pubData } = (this.supabase.client as any).storage
+        .from('lab-reports')
+        .getPublicUrl(path);
+      const url = pubData?.publicUrl;
+      if (!url) throw new Error('Could not resolve public URL');
+
+      // Audit: stamp pdf_url on any pending whatsapp_messages row for this link.
+      try {
+        const viewerUrl = `${window.location.origin}/public/lab-report/${token}`;
+        await (this.supabase.client as any)
+          .from('whatsapp_messages')
+          .update({ pdf_url: url })
+          .eq('public_url', viewerUrl)
+          .is('pdf_url', null);
+      } catch { /* audit failure is non-fatal */ }
+
+      post({ type: 'pdf-ready', url });
+    } catch (e: any) {
+      post({ type: 'pdf-error', reason: e?.message ?? String(e) });
+    }
   }
 }
