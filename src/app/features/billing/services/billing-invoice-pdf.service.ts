@@ -1,8 +1,25 @@
 import { Injectable } from '@angular/core';
+import QRCode from 'qrcode-svg';
 import type { HospitalSettings, SealAsset } from './hospital-settings.service';
 import type { InvoiceDetail } from '../data/billing.types';
 import type { TokenSlipData } from '../../appointments/data/appointments.types';
 import { renderFooterHTML, FOOTER_CSS, FooterSignatureInput } from '../../../shared/print/footer-renderer';
+import { environment } from '../../../../environments/environment';
+
+/** Build the public-verification URL for an invoice and render it as an
+ *  inline-SVG QR (base-64'd into a data: URL so jsPDF/html2canvas can pick
+ *  it up without an extra round-trip). Returns null when the layout flag
+ *  is off so the footer renderer drops the QR cell. */
+function maybeInvoiceQrDataUrl(invoiceNumber: string, layoutOn: boolean): string | null {
+  if (!layoutOn || !invoiceNumber) return null;
+  const base = (environment as any).publicBaseUrl
+    || (typeof window !== 'undefined' ? window.location.origin : '');
+  if (!base) return null;
+  const verifyUrl = `${base.replace(/\/$/, '')}/v/inv/${encodeURIComponent(invoiceNumber)}`;
+  const svg = new QRCode({ content: verifyUrl, padding: 1, width: 96, height: 96, ecl: 'M' }).svg();
+  // data:image/svg+xml,<svg…> — works in both <img src> and html2canvas
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
 
 export interface InvoicePrintOptions {
   headerMode?: 'with-header' | 'no-header';
@@ -364,7 +381,11 @@ export class BillingInvoicePdfService {
 
     ${footerMode === 'with-footer' ? `
     ${token ? `<div class="token-instruction"><strong>Please proceed to the triage station with this slip.</strong></div>` : ''}
-    ${renderFooterHTML(settings, { document: 'invoice', signatures: data.signatures })}
+    ${renderFooterHTML(settings, {
+      document: 'invoice',
+      signatures: data.signatures,
+      qrUrl: maybeInvoiceQrDataUrl(invoice.invoice_number, !!settings?.footer_layout?.show_qr),
+    })}
     ` : ''}
 
   </div>

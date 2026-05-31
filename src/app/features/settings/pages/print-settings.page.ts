@@ -10,6 +10,8 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import QRCode from 'qrcode-svg';
+import { environment } from '../../../../environments/environment';
 
 import { AuthStore } from '../../../core/auth/auth.store';
 import { SupabaseService } from '../../../core/supabase/supabase.service';
@@ -381,7 +383,22 @@ export class PrintSettingsPage implements OnInit {
     const s = this.settings();
     if (!s) return '';
     const sigs = this.resolvePreviewSignatures();
-    const body = renderFooterHTML(s as any, { document: this.previewDoc(), signatures: sigs });
+    // When the QR layout flag is on, embed a sample QR pointing at the
+    // public verification URL so the user sees exactly what will print.
+    const showQr = !!s.footer_layout?.show_qr;
+    let qrUrl: string | null = null;
+    if (showQr) {
+      const base = (environment as any).publicBaseUrl
+        || (typeof window !== 'undefined' ? window.location.origin : '');
+      if (base) {
+        const sample = this.previewDoc() === 'invoice'
+          ? `${base.replace(/\/$/, '')}/v/inv/INV-SAMPLE-12345`
+          : `${base.replace(/\/$/, '')}/v/report/00000000-0000-0000-0000-000000000000`;
+        const svg = new QRCode({ content: sample, padding: 1, width: 96, height: 96, ecl: 'M' }).svg();
+        qrUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+      }
+    }
+    const body = renderFooterHTML(s as any, { document: this.previewDoc(), signatures: sigs, qrUrl });
     // Wrap in a minimal scaffold so the shared CSS applies inside [innerHTML].
     return `<style>${FOOTER_CSS}</style><div style="font-family:'Segoe UI',Arial,sans-serif;color:#1f2937;">${body}</div>`;
   });

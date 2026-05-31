@@ -37,6 +37,23 @@ export const routes: Routes = [
     title: 'Service Request · Sree Diagnostics',
   },
 
+  // ── Public document verification (no auth) ──────────────────
+  // Scanned by patients / inspectors via the QR printed on invoices
+  // (/v/inv/:number) and lab reports (/v/report/:orderId). Returns
+  // minimal metadata via SECURITY DEFINER RPCs — no PII exposed.
+  {
+    path: 'v/inv/:number',
+    loadComponent: () =>
+      import('./features/verify/pages/verify.page').then((m) => m.VerifyPage),
+    title: 'Verify invoice · Sree Diagnostics',
+  },
+  {
+    path: 'v/report/:orderId',
+    loadComponent: () =>
+      import('./features/verify/pages/verify.page').then((m) => m.VerifyPage),
+    title: 'Verify report · Sree Diagnostics',
+  },
+
   // ── Public lobby waiting screen (no auth) ────────────────────
   {
     path: 'wait/:branchCode',
