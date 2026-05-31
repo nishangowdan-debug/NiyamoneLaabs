@@ -43,7 +43,8 @@ interface AttendanceExportRow {
       </p>
     </div>
     <div class="flex items-center gap-2">
-      <input type="date" [value]="date()" (change)="onDateChange($any($event.target).value)"
+      <input type="date" [value]="date()" [max]="today()" (change)="onDateChange($any($event.target).value)"
+             title="Attendance for future dates is not allowed"
              class="h-9 px-2.5 text-[13px] bg-surface-card border border-border rounded-md text-ink focus:outline-none focus:border-primary-600 focus:ring-[3px] focus:ring-primary-100" />
       <app-export-menu [disabled]="visibleRoster().length === 0" (pick)="onExport($event)"/>
     </div>
@@ -179,6 +180,10 @@ export class AttendancePage implements OnInit {
   private exportSvc = inject(ExportService);
 
   protected readonly date    = signal(format(new Date(), 'yyyy-MM-dd'));
+  /** Today in IST (yyyy-MM-dd) — the upper bound for the date picker.
+   *  Computed once per page load; refresh on reload if the user keeps the
+   *  tab open past midnight. */
+  protected readonly today   = signal(format(new Date(), 'yyyy-MM-dd'));
   protected readonly roster  = signal<RosterRow[]>([]);
   protected readonly loading = signal(true);
   protected readonly error   = signal<string | null>(null);
@@ -257,7 +262,21 @@ export class AttendancePage implements OnInit {
     }
   }
 
-  protected onDateChange(d: string) { this.date.set(d); void this.reload(); }
+  protected onDateChange(d: string) {
+    // Browsers can still POST a future value (typed, pasted, scripted) even
+    // with [max]="today()" on the input — enforce the same rule here so the
+    // signal never holds a future date.
+    if (d && d > this.today()) {
+      this.toast.warn(
+        'Future date not allowed',
+        'Attendance can only be marked for today or earlier dates. Reverting to today.',
+      );
+      this.date.set(this.today());
+    } else {
+      this.date.set(d);
+    }
+    void this.reload();
+  }
 
   protected initials(name: string): string {
     return (name || '?').split(/\s+/).filter(Boolean).map(s => s[0]).slice(0, 2).join('').toUpperCase();
@@ -303,6 +322,14 @@ export class AttendancePage implements OnInit {
   }
   protected async onStatusChange(r: RosterRow, status: string) {
     if (!['present','late','half_day','leave','absent','off'].includes(status)) return;
+    if (this.date() > this.today()) {
+      this.toast.warn(
+        'Future date not allowed',
+        `Cannot mark ${r.full_name} as "${status}" on a future date. Pick today or earlier.`,
+      );
+      await this.reload(); // Snap dropdown back to the saved value.
+      return;
+    }
     try {
       await this.svc.setStatus(r.staff_id, this.date(), status as AttendanceStatus);
       this.toast.success('Updated', `${r.full_name} → ${status}`);
