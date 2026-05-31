@@ -479,9 +479,23 @@ export class LabReportSreeService {
     const s = b.settings;
     const tech = b.technician;
     const verifier = b.verifier;
+    // Render each configured seal: as an <img> when the admin has uploaded
+    // an image, or as a clean text badge when the URL is empty. The old
+    // implementation always emitted <img src="..."> which renders as a
+    // broken-image icon in PDFs whenever the seal slot was named but no
+    // image had been uploaded yet (the common state after fresh setup).
     const seals: SealAsset[] = Array.isArray(s.footer_seal_urls) ? s.footer_seal_urls : [];
     const sealsHtml = seals.length
-      ? seals.map((x) => `<img src="${this.attr(x.url)}" alt="${this.attr(x.name)}" />`).join('')
+      ? seals.map((x) => {
+          const url = (x?.url ?? '').trim();
+          if (url) {
+            return `<img src="${this.attr(url)}" alt="${this.attr(x.name ?? '')}" />`;
+          }
+          // No image uploaded — show the seal name as a text badge so the
+          // admin still sees their configured accreditations on the report.
+          const label = (x?.name ?? '').replace(/\s+/g, '<br>') || 'QA';
+          return `<div class="seal-fallback">${label}</div>`;
+        }).join('')
       : `<div class="seal-fallback">ISO<br>9001:2015</div>
          <div class="seal-fallback">QUALITY<br>APPROVED</div>
          <div class="seal-fallback">${this.esc(s.accreditations?.[0]?.number || 'QA-NABL')}</div>`;
