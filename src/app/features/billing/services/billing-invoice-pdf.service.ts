@@ -109,6 +109,14 @@ export class BillingInvoicePdfService {
     return `${safe(patient)}_${dateStr}_${safe(inv.invoice_number)}`;
   }
 
+  /** Public wrapper around the HTML generator so the patient-facing
+   *  /public/invoice/:token page can render the EXACT same branded
+   *  invoice the in-app print produces. Returns a complete <!DOCTYPE
+   *  html> document — inject via [innerHTML] with DomSanitizer. */
+  renderHtml(data: BillingInvoiceData): string {
+    return this.generateHTML(data);
+  }
+
   private generateHTML(data: BillingInvoiceData): string {
     const { invoice, settings, token, routing, print } = data;
     const totalRupees = (invoice.total_cents / 100).toFixed(2);
