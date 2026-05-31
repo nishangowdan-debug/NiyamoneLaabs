@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CompanyInfoTab } from './tabs/company-info.tab';
 import { LetterheadTab } from './tabs/letterhead.tab';
 import { LetterTemplatesTab } from './tabs/letter-templates.tab';
@@ -7,8 +7,10 @@ import { IntegrationsTab } from './tabs/integrations.tab';
 import { CategoriesTab } from './tabs/categories.tab';
 import { GstRatesPage } from './gst-rates.page';
 import { HsnCodesPage } from './hsn-codes.page';
+import { PrintSettingsPage } from './print-settings.page';
 
-type TabKey = 'company' | 'letterhead' | 'letter-templates' | 'integrations' | 'gst' | 'hsn' | 'categories' | 'users';
+type TabKey = 'company' | 'letterhead' | 'print-branding' | 'letter-templates'
+            | 'integrations' | 'gst' | 'hsn' | 'categories' | 'users';
 
 /**
  * Settings hub — single page with 8 horizontal tabs, matching the reference
@@ -23,7 +25,7 @@ type TabKey = 'company' | 'letterhead' | 'letter-templates' | 'integrations' | '
   imports: [
     RouterLink,
     CompanyInfoTab, LetterheadTab, LetterTemplatesTab, IntegrationsTab,
-    CategoriesTab, GstRatesPage, HsnCodesPage,
+    CategoriesTab, GstRatesPage, HsnCodesPage, PrintSettingsPage,
   ],
   template: `
     <header class="pb-3 mb-4 border-b border-border">
@@ -55,6 +57,7 @@ type TabKey = 'company' | 'letterhead' | 'letter-templates' | 'integrations' | '
     @switch (tab()) {
       @case ('company')         { <app-company-info-tab /> }
       @case ('letterhead')      { <app-letterhead-tab /> }
+      @case ('print-branding')  { <app-print-settings-page /> }
       @case ('letter-templates'){ <app-letter-templates-tab /> }
       @case ('integrations')    { <app-integrations-tab /> }
       @case ('gst')             { <app-gst-rates-page /> }
@@ -83,12 +86,15 @@ type TabKey = 'company' | 'letterhead' | 'letter-templates' | 'integrations' | '
     }
   `,
 })
-export class SettingsPage {
+export class SettingsPage implements OnInit {
+  private route = inject(ActivatedRoute);
+
   protected readonly tab = signal<TabKey>('company');
 
   protected readonly tabs: Array<{ key: TabKey; label: string }> = [
     { key: 'company',          label: 'Company info' },
     { key: 'letterhead',       label: 'Letterhead' },
+    { key: 'print-branding',   label: 'Print branding' },
     { key: 'letter-templates', label: 'Letter templates' },
     { key: 'integrations',     label: 'Integrations' },
     { key: 'gst',              label: 'GST rates' },
@@ -96,4 +102,11 @@ export class SettingsPage {
     { key: 'categories',       label: 'Categories' },
     { key: 'users',            label: 'Users & roles' },
   ];
+
+  /** Honour ?tab=… deep-links so external bookmarks (and the redirected
+   *  /settings/print URL) land on the right tab. */
+  ngOnInit(): void {
+    const q = this.route.snapshot.queryParamMap.get('tab') as TabKey | null;
+    if (q && this.tabs.some(t => t.key === q)) this.tab.set(q);
+  }
 }

@@ -22,12 +22,12 @@ export const settingsRoutes: Routes = [
     data: { roles: ['super_admin', 'branch_admin'] },
     title: 'Legacy settings · Sree Diagnostics',
   },
+  // /settings/print is now a tab in the main hub; keep the URL working as a
+  // redirect so old sidebar links / bookmarks land on the right tab.
   {
     path: 'print',
-    loadComponent: () => import('./pages/print-settings.page').then((m) => m.PrintSettingsPage),
-    canMatch: [roleGuard],
-    data: { roles: ['super_admin', 'branch_admin'] },
-    title: 'Print Settings · Sree Diagnostics',
+    redirectTo: '/settings?tab=print-branding',
+    pathMatch: 'full',
   },
   {
     path: 'phlebotomists',

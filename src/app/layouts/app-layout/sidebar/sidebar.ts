@@ -22,7 +22,6 @@ import {
   CalendarClock,
   Wallet,
   Stethoscope,
-  Printer,
   IndianRupee,
 } from 'lucide-angular';
 import { AuthStore } from '../../../core/auth/auth.store';
@@ -407,9 +406,13 @@ export class Sidebar {
       label: 'Settings',
       icon: Settings,
       items: [
-        { label: 'Lab profile',     route: '/settings',       icon: Building2, roles: ['super_admin','branch_admin'] },
-        { label: 'Print settings',  route: '/settings/print', icon: Printer,   roles: ['super_admin','branch_admin'] },
-        { label: 'Users',           route: '/staff',          icon: UserCog,   roles: ['super_admin','branch_admin'] },
+        // Single Settings entry — points at the tabbed hub which now hosts
+        // Company info, Letterhead, Print branding (was /settings/print),
+        // Letter templates, Integrations, GST, HSN, Categories. The old
+        // "Print settings" sidebar item is gone; /settings/print redirects
+        // to /settings?tab=print-branding to keep old bookmarks working.
+        { label: 'Settings',        route: '/settings', icon: Building2, roles: ['super_admin','branch_admin'] },
+        { label: 'Users',           route: '/staff',    icon: UserCog,   roles: ['super_admin','branch_admin'] },
       ],
     },
   ];
