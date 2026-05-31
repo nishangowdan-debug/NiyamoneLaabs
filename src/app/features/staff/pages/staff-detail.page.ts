@@ -276,6 +276,57 @@ function hashIndex(s: string, len: number): number {
           </div>
         </div>
 
+        <!-- ── Branch access (Pattern B: multi-branch grant for non-super-admins) ─── -->
+        @if (canWrite() && m.role_slug !== 'super_admin') {
+          <section class="bg-surface-card border border-border rounded-[10px] mt-4">
+            <div class="px-5 py-3.5 border-b border-border flex items-center justify-between">
+              <div>
+                <p class="text-[13px] font-semibold text-ink">Branch access</p>
+                <p class="text-[11px] text-ink-muted mt-0.5">
+                  Branches this user can see and manage. Tick any branch to grant access; primary branch stays granted.
+                  @if (m.role_slug === 'branch_admin' || m.role_slug === 'hr') {
+                    <span class="text-warn-fg"> · They'll be able to read+write staff/data in every ticked branch.</span>
+                  }
+                </p>
+              </div>
+              @if (branchSaving()) {
+                <span class="text-[11px] text-ink-muted">Saving…</span>
+              }
+            </div>
+            <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-2">
+              @for (b of allBranches(); track b.id) {
+                <label class="flex items-center gap-2.5 px-3 py-2 border border-border rounded-md"
+                       [class.bg-primary-50]="isPrimaryBranchOf(m, b)"
+                       [class.border-primary-200]="isPrimaryBranchOf(m, b)"
+                       [class.cursor-not-allowed]="isPrimaryBranchOf(m, b) || branchSaving()"
+                       [class.cursor-pointer]="!isPrimaryBranchOf(m, b) && !branchSaving()"
+                       [class.hover:bg-surface-muted]="!isPrimaryBranchOf(m, b) && !branchSaving()">
+                  <input type="checkbox"
+                         [checked]="isPrimaryBranchOf(m, b) || accessibleBranchIds().includes(b.id)"
+                         [disabled]="isPrimaryBranchOf(m, b) || branchSaving()"
+                         (change)="toggleBranch(m, b, $any($event.target).checked)"
+                         class="size-4 accent-primary-600" />
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[13px] font-medium text-ink truncate">{{ b.name }}</p>
+                    <p class="text-[10px] font-mono text-ink-muted">{{ b.code }}</p>
+                  </div>
+                  @if (isPrimaryBranchOf(m, b)) {
+                    <span class="px-1.5 py-0.5 rounded-full bg-primary-100 text-primary-800 text-[10px] font-semibold">Primary</span>
+                  }
+                </label>
+              } @empty {
+                <p class="col-span-2 text-[12px] text-ink-muted py-2">No branches available. Ask a super-admin to seed at least one.</p>
+              }
+            </div>
+            @if (m.role_slug === 'doctor' || m.role_slug === 'lab_tech' || m.role_slug === 'reception' || m.role_slug === 'accountant' || m.role_slug === 'nurse' || m.role_slug === 'pharmacist') {
+              <p class="px-5 pb-4 text-[11px] text-ink-muted">
+                <strong>Note:</strong> For non-admin roles, the topbar branch selector is the operational scope.
+                Adding extra branches here lets them switch the topbar to those branches; they still can't manage staff or branch settings.
+              </p>
+            }
+          </section>
+        }
+
         <!-- ── Digital signature (visible only for "self") ───────────── -->
         @if (m.id === currentStaffId()) {
           <div class="bg-surface-card border border-border rounded-[10px] mt-4 p-5">
@@ -399,6 +450,14 @@ export class StaffDetailPage implements OnInit {
   /** Branches the editor can choose from. Sourced from BranchStore which is
    *  loaded by the app shell — falls back to a fetch in startEdit() if empty. */
   protected readonly editBranches = this.branchStore.branches;
+  /** Same list, surfaced for the Branch-access checkbox grid. Aliased
+   *  for template clarity. */
+  protected readonly allBranches = this.branchStore.branches;
+
+  /** Branch ids currently linked to this staff via `staff_branches` —
+   *  drives the checked state of the Branch-access grid. */
+  protected readonly accessibleBranchIds = signal<string[]>([]);
+  protected readonly branchSaving = signal(false);
 
   protected readonly form = new FormGroup({
     full_name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.minLength(2)] }),
@@ -415,10 +474,51 @@ export class StaffDetailPage implements OnInit {
     this.loading.set(true);
     try {
       this.member.set(await this.svc.getById(id));
+      // Make sure the branch list is loaded for the Branch-access grid.
+      if (this.branchStore.branches().length === 0) void this.branchStore.load();
+      // Load current branch grants — drives the checkbox state.
+      await this.loadBranchAccess(id);
     } catch (e) {
       this.loadError.set(e instanceof Error ? e.message : 'Could not load staff member');
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  /** Reload the set of branch grants from the server. */
+  private async loadBranchAccess(staffId: string): Promise<void> {
+    try { this.accessibleBranchIds.set(await this.svc.listStaffBranches(staffId)); }
+    catch { this.accessibleBranchIds.set([]); }
+  }
+
+  /** True when `b` is the staff's primary branch — primary is always checked
+   *  and disabled in the grid, so the user can't accidentally lock the
+   *  staff out of their own home branch. */
+  protected isPrimaryBranchOf(m: StaffMember, b: { id: string }): boolean {
+    const primaryId = m.branch?.id ?? (m as any).primary_branch_id ?? null;
+    return primaryId === b.id;
+  }
+
+  /** Grant or revoke a non-primary branch. Reverts the checkbox on error
+   *  so the UI stays consistent with the server. */
+  protected async toggleBranch(m: StaffMember, b: { id: string; name: string }, checked: boolean): Promise<void> {
+    if (this.isPrimaryBranchOf(m, b)) return;  // primary is read-only here
+    this.branchSaving.set(true);
+    try {
+      if (checked) {
+        await this.svc.addStaffBranch(m.id, b.id);
+        this.toast.success('Branch added', b.name);
+      } else {
+        await this.svc.removeStaffBranch(m.id, b.id);
+        this.toast.success('Branch removed', b.name);
+      }
+      await this.loadBranchAccess(m.id);
+    } catch (e: any) {
+      this.toast.error('Could not update access', e?.message ?? '');
+      // Refresh from server so the checkbox snaps back to truth
+      await this.loadBranchAccess(m.id);
+    } finally {
+      this.branchSaving.set(false);
     }
   }
 

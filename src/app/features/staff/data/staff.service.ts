@@ -101,6 +101,42 @@ export class StaffService {
     if (error) throw toError(error);
   }
 
+  // ── Multi-branch access (Pattern B) ───────────────────────────────────
+  /** Return the set of branch_ids this staff member can access via the
+   *  `staff_branches` link table. Includes the primary branch (the auto-
+   *  backfill / create_staff_locally trigger keeps both in sync). */
+  async listStaffBranches(staffId: string): Promise<string[]> {
+    const { data, error } = await this.supabase.client
+      .from('staff_branches')
+      .select('branch_id')
+      .eq('staff_id', staffId);
+    if (error) throw toError(error);
+    return (data ?? []).map((r: any) => r.branch_id);
+  }
+
+  /** Grant an additional branch to a non-super-admin staff member. The
+   *  branch-scoped RLS policy on staff_branches rejects the call when the
+   *  current user doesn't have access to `branchId` themselves — so a
+   *  branch_admin can only grant a subset of their own access. */
+  async addStaffBranch(staffId: string, branchId: string): Promise<void> {
+    const { error } = await (this.supabase.client as any)
+      .from('staff_branches')
+      .upsert({ staff_id: staffId, branch_id: branchId }, { onConflict: 'staff_id,branch_id' });
+    if (error) throw toError(error);
+  }
+
+  /** Revoke a previously-granted branch. NOTE: the caller must guard
+   *  against removing the staff's `primary_branch_id` — otherwise the
+   *  branch-scoped RLS will lock the user out of their own home branch. */
+  async removeStaffBranch(staffId: string, branchId: string): Promise<void> {
+    const { error } = await this.supabase.client
+      .from('staff_branches')
+      .delete()
+      .eq('staff_id', staffId)
+      .eq('branch_id', branchId);
+    if (error) throw toError(error);
+  }
+
   async setActive(id: string, active: boolean): Promise<void> {
     const { error } = await this.supabase.client
       .from('staff')
