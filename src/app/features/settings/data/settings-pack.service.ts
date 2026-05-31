@@ -37,18 +37,28 @@ export interface HsnCode {
 }
 
 // ── Letter templates ─────────────────────────────────────────────────
+export interface TcClause { title: string; body: string; }
+
 export interface LetterTemplate {
   id?: string;
   code: string;
   name: string;
   category: 'consent' | 'referral' | 'certificate' | 'notice' | string;
+  description?: string | null;
   branch_id?: string | null;
+  // legacy raw-HTML body (still used by the renderer as fallback)
   body_html: string;
   header_html?: string | null;
   footer_html?: string | null;
   variables: string[];
   default_signatory_role?: string | null;
   is_active: boolean;
+  // structured v2 fields — preferred by the editor and renderer
+  subject_line?: string | null;
+  salutation?: string | null;
+  intro_paragraph?: string | null;
+  tc_clauses?: TcClause[];
+  closing_paragraph?: string | null;
   current_version?: number;
   created_at?: string;
   updated_at?: string;

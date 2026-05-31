@@ -2,12 +2,25 @@ import { Routes } from '@angular/router';
 import { roleGuard } from '../../core/auth/auth.guards';
 
 export const settingsRoutes: Routes = [
+  // New 8-tab settings hub (Company info / Letterhead / Letter templates /
+  // Integrations / GST rates / HSN-SAC / Categories / Users & roles)
   {
     path: '',
     loadComponent: () => import('./pages/settings.page').then((m) => m.SettingsPage),
     canMatch: [roleGuard],
     data: { roles: ['super_admin', 'branch_admin'] },
     title: 'Settings · Sree Diagnostics',
+  },
+  // Legacy 5-tab page (Lab profile / Roles & permissions / Digital signatures
+  // / Demo data) — preserved so the older logo / RLS-permissions / signature
+  // upload / demo seeding flows stay reachable while we migrate equivalents
+  // into the new hub.
+  {
+    path: 'legacy',
+    loadComponent: () => import('./pages/legacy-settings.page').then((m) => m.LegacySettingsPage),
+    canMatch: [roleGuard],
+    data: { roles: ['super_admin', 'branch_admin'] },
+    title: 'Legacy settings · Sree Diagnostics',
   },
   {
     path: 'print',
@@ -22,34 +35,5 @@ export const settingsRoutes: Routes = [
     canMatch: [roleGuard],
     data: { roles: ['super_admin', 'branch_admin'] },
     title: 'Phlebotomists · Sree Diagnostics',
-  },
-  // ── Settings pack (GST rates, HSN codes, letter templates, integrations) ──
-  {
-    path: 'gst-rates',
-    loadComponent: () => import('./pages/gst-rates.page').then((m) => m.GstRatesPage),
-    canMatch: [roleGuard],
-    data: { roles: ['super_admin', 'branch_admin'] },
-    title: 'GST rates · Sree Diagnostics',
-  },
-  {
-    path: 'hsn-codes',
-    loadComponent: () => import('./pages/hsn-codes.page').then((m) => m.HsnCodesPage),
-    canMatch: [roleGuard],
-    data: { roles: ['super_admin', 'branch_admin'] },
-    title: 'HSN codes · Sree Diagnostics',
-  },
-  {
-    path: 'letter-templates',
-    loadComponent: () => import('./pages/letter-templates.page').then((m) => m.LetterTemplatesPage),
-    canMatch: [roleGuard],
-    data: { roles: ['super_admin', 'branch_admin'] },
-    title: 'Letter templates · Sree Diagnostics',
-  },
-  {
-    path: 'integrations',
-    loadComponent: () => import('./pages/integrations.page').then((m) => m.IntegrationsPage),
-    canMatch: [roleGuard],
-    data: { roles: ['super_admin', 'branch_admin'] },
-    title: 'Integrations · Sree Diagnostics',
   },
 ];
