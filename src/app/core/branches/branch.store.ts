@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuthStore } from '../auth/auth.store';
 
@@ -48,7 +48,27 @@ export class BranchStore {
   /** Whether to show the "All hospitals" cross-branch option. Super_admin only. */
   readonly canSeeAll = computed(() => this.auth.hasRole('super_admin'));
 
-  /** Loads branches once. Subsequent calls dedupe via the cached promise. */
+  /** Reactive bootstrap: whenever the auth session changes (sign-in,
+   *  sign-out, token refresh) we BUST the load cache and re-fetch. This
+   *  closes the original race where BranchStore was injected before
+   *  AuthStore.init() resolved → `load()` ran with isAuthed=false, cached
+   *  an empty result, and never re-tried after sign-in → branch picker
+   *  permanently showed "no access to any active branch". */
+  private readonly _authSyncFx = effect(() => {
+    const session = this.auth.session();
+    if (session) {
+      this.loadPromise = null;        // bust stale cache
+      void this.load();
+    } else {
+      this.loadPromise = null;
+      this._branches.set([]);
+      this._activeBranchId.set(null);
+    }
+  });
+
+  /** Loads branches once. Subsequent calls dedupe via the cached promise.
+   *  The auth-sync effect above resets the cache on every session change
+   *  so this still re-runs after sign-in. */
   async load(): Promise<void> {
     if (this.loadPromise) return this.loadPromise;
     this.loadPromise = this.doLoad();
